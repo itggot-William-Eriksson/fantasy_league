@@ -1,0 +1,22 @@
+form action="/start/groups/name_change/#{group_id}" method="post"
+    input type="text" name="name" value="#{group_name}" class="changeable_title"
+- user_list.each do |x|
+    div style="display: flex; flex-direction: row"
+        p = username_list[x]
+        - if x.join != leader_id
+            a href="/start/groups/promote/#{x.join}/#{group_id}"
+                button
+                    p promote
+            a href="/start/groups/kick/#{x.join}/#{group_id}"
+                button
+                    p kick
+p Invite people!
+form action="/start/groups/invite/#{group_id}/#{user_id}" method="post"
+    input type="text" name="username" placeholder="Username"
+    input type="submit" value="Invite!"
+a href="/start"
+    button
+        p Back
+a href="/start/groups/delete/#{group_id}"
+    button
+        p Delete this group

@@ -1,0 +1,18 @@
+a href="./start/groups/create"
+    button
+        p Create a new group
+- group_names.each_with_index do |x,y|
+    div class="standard"
+        a href="/start/groups/#{result[y]}"
+            p
+                = x
+a href="./logout"
+    p Log out
+- invites.each do |x|
+    - if x[4] == 0
+        div class="standard"
+            h4 You have an invite from #{x[3]} to join the group #{x[2]}
+            form action="/start/groups/accept/#{x[0]}" method="post"
+                input type="submit" value="Accpet"
+            form action="/start/groups/decline/#{x[0]}" method="post"
+                input type="submit" value="Decline"
