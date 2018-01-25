@@ -11,19 +11,19 @@ class App < Sinatra::Base
 			redirect('./')
 		end
 		db = SQLite3::Database.new("allt.sqlite")
-		userid = db.execute("SELECT id FROM users WHERE username = '#{session[:user]}'").join
-		result = db.execute("SELECT groupid FROM user_group WHERE userid = #{userid}")
-		invites = db.execute("SELECT * FROM invites WHERE invited_user_id = '#{userid}'")
+		userid = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
+		result = db.execute("SELECT groupid FROM user_group WHERE userid = ?", [userid])
+		invites = db.execute("SELECT * FROM invites WHERE invited_user_id = ?", [userid])
 		invites.each_with_index do |x,y|
-			invites[y][3] = db.execute("SELECT username FROM users WHERE id = '#{x[3]}'").join
+			invites[y][3] = db.execute("SELECT username FROM users WHERE id = ?", [x[3]]).join
 			invites[y] << x[2]
-			group_name = db.execute("SELECT name FROM groups WHERE id = '#{x[2]}'").join
+			group_name = db.execute("SELECT name FROM groups WHERE id = ?", [x[2]]).join
 			invites[y][2] = group_name
 		end
 		group_names = []
 		result.each_with_index do |x,y|
 			result[y] = x.join
-			group_names << db.execute("SELECT name FROM groups WHERE id = '#{x.join}'").join
+			group_names << db.execute("SELECT name FROM groups WHERE id = ?", [x.join]).join
 		end
 		slim(:start, locals:{result:result, group_names:group_names, invites:invites, userid:userid})
 	end
@@ -41,13 +41,13 @@ class App < Sinatra::Base
 		end
 		group_id = params["id"].to_i
 		db = SQLite3::Database.new("allt.sqlite")
-		user_list = db.execute("SELECT userid FROM user_group WHERE groupid ='#{group_id}'")
-		group_name = db.execute("SELECT name FROM groups WHERE id ='#{group_id}'").join
-		leader_id = db.execute("SELECT group_leader_id FROM groups WHERE id ='#{group_id}'").join
-		user_id = db.execute("SELECT id FROM users WHERE username ='#{session[:user]}'").join
+		user_list = db.execute("SELECT userid FROM user_group WHERE groupid = ?", [group_id])
+		group_name = db.execute("SELECT name FROM groups WHERE id = ?", [group_id]).join
+		leader_id = db.execute("SELECT group_leader_id FROM groups WHERE id = ?", [group_id]).join
+		user_id = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
 		username_list = {}
 		user_list.each do |x|
-			username = db.execute("SELECT username FROM users WHERE id ='#{x.join}'").join
+			username = db.execute("SELECT username FROM users WHERE id = ?", [x.join]).join
 			username_list[x] = username
 		end
 		if leader_id == user_id
@@ -61,37 +61,53 @@ class App < Sinatra::Base
 		user_id = params["user_id"]
 		group_id = params["group_id"]
 		db = SQLite3::Database.new("allt.sqlite")
-		db.execute("UPDATE groups SET group_leader_id = '#{user_id}' WHERE id = '#{group_id}'")
-		redirect('/start')
+		leader_id = db.execute("SELECT group_leader_id FROM groups WHERE id = ?", [group_id]).join
+		logged_in_user_id = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
+		if leader_id != logged_in_user_id
+			session[:fail_message] = "You are not allowed to do that"
+			session[:redirect_to] = "./start/groups/#{group_id}"
+			redirect('./fail')
+		end
+		db.execute("UPDATE groups SET group_leader_id = ? WHERE id = ?", [user_id, group_id])
+		redirect('/start/groups/'+group_id)
 	end
 	
 	get '/start/groups/kick/:user_id/:group_id' do
 		user_id = params["user_id"]
 		group_id = params["group_id"]
 		db = SQLite3::Database.new("allt.sqlite")
-		db.execute("DELETE FROM user_group WHERE userid = '#{user_id}' AND groupid = '#{group_id}'")
-		redirect('/start')
+		leader_id = db.execute("SELECT group_leader_id FROM groups WHERE id = ?", [group_id]).join
+		logged_in_user_id = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
+		if leader_id != logged_in_user_id
+			session[:fail_message] = "You are not allowed to do that"
+			session[:redirect_to] = "./start/groups/#{group_id}"
+			redirect('./fail')
+		end
+		db.execute("DELETE FROM user_group WHERE userid = ? AND groupid = ?", [user_id, group_id])
+		redirect('/start/groups/'+group_id)
 	end
 
 	get '/start/groups/leave/:user_id/:group_id' do
 		user_id = params["user_id"]
 		group_id = params["group_id"]
 		db = SQLite3::Database.new("allt.sqlite")
-		db.execute("DELETE FROM user_group WHERE userid = '#{user_id}' AND groupid = '#{group_id}'")
+		db.execute("DELETE FROM user_group WHERE userid = ? AND groupid = ?", [user_id, group_id])
 		redirect('/start')
 	end
 
 	get '/start/groups/delete/:group_id' do
 		group_id = params["group_id"]
 		db = SQLite3::Database.new("allt.sqlite")
-		leader_id = db.execute("SELECT group_leader_id FROM groups WHERE id = '#{group_id}'").join
-		user_id = db.execute("SELECT id FROM users WHERE username = '#{session[:user]}'").join
+		leader_id = db.execute("SELECT group_leader_id FROM groups WHERE id = ?", [group_id]).join
+		user_id = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
 		if leader_id != user_id
-			redirect("/logout")
+			session[:fail_message] = "You are not allowed to do that"
+			session[:redirect_to] = "./start/groups/#{group_id}"
+			redirect('./fail')
 		end
-		db.execute("DELETE FROM groups WHERE id = '#{group_id}'")
-		user_ids = db.execute("SELECT userid FROM user_group WHERE groupid = '#{group_id}'")
-		p user_ids
+		db.execute("DELETE FROM groups WHERE id = ?", [group_id])
+		db.execute("DELETE FROM user_group WHERE groupid = ?", [group_id])
+		db.execute("DELETE FROM invites WHERE group_id = ?", [group_id])
 		redirect('/start')
 	end
 	
@@ -114,24 +130,36 @@ class App < Sinatra::Base
 	post "/start/groups/name_change/:group_id" do
 		group_id = params["group_id"]
 		name = params["name"]
+		if name.length <= 3
+			session[:fail_message] = "Group name too short"
+			session[:redirect_to] = "/start/groups/"+group_id
+			redirect('./fail')
+		end
 		db = SQLite3::Database.new("allt.sqlite")
-		db.execute("UPDATE groups SET name = '#{name}' WHERE id = '#{group_id}'")
+		leader_id = db.execute("SELECT group_leader_id FROM groups WHERE id = ?", [group_id]).join
+		user_id = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
+		if leader_id != user_id
+			session[:fail_message] = "You are not allowed to do that"
+			session[:redirect_to] = "./start/groups/#{group_id}"
+			redirect('./fail')
+		end
+		db.execute("UPDATE groups SET name = ? WHERE id = ?", [name, group_id])
 		redirect("/start/groups/#{group_id}")
 	end
 
 	post '/start/groups/accept/:invite_id' do
 		db = SQLite3::Database.new("allt.sqlite")
 		invite_id = params["invite_id"]
-		db.execute("UPDATE invites SET hidden = '1' WHERE id = '#{invite_id}'")
-		inviteinfo = db.execute("SELECT * FROM invites WHERE id = '#{invite_id}'")[0]
-		db.execute("INSERT INTO user_group (userid,groupid) VALUES ('#{inviteinfo[1]}','#{inviteinfo[2]}')")
+		db.execute("UPDATE invites SET hidden = '1' WHERE id = ?", [invite_id])
+		inviteinfo = db.execute("SELECT * FROM invites WHERE id = ?", [invite_id])[0]
+		db.execute("INSERT INTO user_group (userid,groupid) VALUES (?,?)", [inviteinfo[1], inviteinfo[2]])
 		redirect('/start')
 	end
 	
 	post '/start/groups/decline/:invite_id' do
 		db = SQLite3::Database.new("allt.sqlite")
 		invite_id = params["invite_id"]
-		db.execute("UPDATE invites SET hidden = '1' WHERE id = '#{invite_id}'")
+		db.execute("UPDATE invites SET hidden = '1' WHERE id = ?", [invite_id])
 		redirect('/start')
 	end
 
@@ -140,8 +168,15 @@ class App < Sinatra::Base
 		inviter_id = params["user_id"]
 		username = params["username"]
 		db = SQLite3::Database.new("allt.sqlite")
+		leader_id = db.execute("SELECT group_leader_id FROM groups WHERE id = ?", [group_id]).join
+		user_id = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
+		if leader_id != user_id
+			session[:fail_message] = "You are not allowed to do that"
+			session[:redirect_to] = "./start/groups/#{group_id}"
+			redirect('./fail')
+		end
 		begin
-			user_id = db.execute("SELECT id FROM users WHERE username = '#{username}'").join
+			user_id = db.execute("SELECT id FROM users WHERE username = ?", [username]).join
 		rescue
 			session[:fail_message] = "User doesn't exist"
 			session[:redirect_to] = "./start/groups/#{group_id}"
@@ -156,7 +191,7 @@ class App < Sinatra::Base
 			session[:redirect_to] = "./start/groups/#{group_id}"
 			redirect('./fail')
 		end
-		user_list = db.execute("SELECT userid FROM user_group WHERE groupid = '#{group_id}'")
+		user_list = db.execute("SELECT userid FROM user_group WHERE groupid = ?", [group_id])
 		user_list.each do |x|
 			if user_id == x.join
 				session[:fail_message] = "User already in group"
@@ -164,26 +199,50 @@ class App < Sinatra::Base
 				redirect('./fail')
 			end
 		end
-		group_name = db.execute("SELECT name FROM groups WHERE id = '#{group_id}'")
-		inviter_name = db.execute("SELECT username FROM users WHERE id ='#{group_id}'")
+		group_name = db.execute("SELECT name FROM groups WHERE id = ?", [group_id])
+		inviter_name = db.execute("SELECT username FROM users WHERE id = ?", [group_id])
 		hidden = 0
+		invite_list = db.execute("SELECT * FROM invites WHERE invited_user_id = ? AND group_id = ? AND hidden = '0'", [user_id, group_id])
+		p invite_list
+		if invite_list != []
+			session[:fail_message] = "User already invited"
+			session[:redirect_to] = "./start/groups/#{group_id}"
+			redirect('./fail')
+		end
 		begin
-			db.execute("INSERT INTO invites (invited_user_id,group_id,inviter_user_id,hidden) VALUES ('#{user_id}','#{group_id}','#{inviter_id}','#{hidden}')")
+			db.execute("INSERT INTO invites (invited_user_id,group_id,inviter_user_id,hidden) VALUES (?,?,?,?)", [user_id, group_id, inviter_id, hidden])
 		rescue
 			session[:fail_message] = "Something went wrong"
 			session[:redirect_to] = "./start/groups/#{group_id}"
 			redirect('./fail')
 		end
-		redirect('/start')
+		redirect('/start/groups/'+group_id)
 	end
 
 	post '/start/groups/create' do
 		db = SQLite3::Database.new("allt.sqlite")
-		userid = db.execute("SELECT id FROM users WHERE username = '#{session[:user]}'").join
+		userid = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
 		group_name = params["group_name"]
-		db.execute("INSERT INTO groups (name,group_leader_id) VALUES ('#{group_name}','#{userid.to_s}')")
-		groupid = db.execute("SELECT id FROM groups WHERE name = '#{group_name}'").join
-		db.execute("INSERT INTO user_group (userid,groupid) VALUES (?,?)", [userid.to_s,groupid.to_s])
+		if group_name.length <= 3
+			session[:fail_message] = "Group name too short"
+			session[:redirect_to] = "/start/groups/create"
+			redirect('./fail')
+		end
+		begin
+			db.execute("INSERT INTO groups (name,group_leader_id) VALUES (?,?)", [group_name, userid.to_s])
+			groupid = db.execute("SELECT id FROM groups WHERE name = ?", [group_name])
+			if groupid.length != 1
+				groupid = groupid[-1]
+				groupid = groupid.join
+			else
+				groupid = groupid.join
+			end
+			db.execute("INSERT INTO user_group (userid,groupid) VALUES (?,?)", [userid.to_s,groupid.to_s])
+		rescue
+			session[:fail_message] = "Something went wrong"
+			session[:redirect_to] = "/start/groups/create"
+			redirect('./fail')
+		end
 		redirect('/start')
 	end
 
@@ -198,7 +257,7 @@ class App < Sinatra::Base
 		end
 		db = SQLite3::Database.new("allt.sqlite")
 		begin
-			password_digest = db.execute("SELECT password FROM users WHERE username ='#{username}'").join
+			password_digest = db.execute("SELECT password FROM users WHERE username = ?", [username]).join
 			password_digest = BCrypt::Password.new(password_digest)
 		rescue
 			session[:fail_message] = "Bad login"
@@ -219,6 +278,16 @@ class App < Sinatra::Base
 		username = params["username"]
 		password2 = params["password2"]
 		password = params["password"]
+		if username.length <= 3
+			session[:fail_message] = "Username too short"
+			session[:redirect_to] = "./register"
+			redirect('./fail')
+		end
+		if password.length <= 3
+			session[:fail_message] = "Password too short"
+			session[:redirect_to] = "./register"
+			redirect('./fail')
+		end
 		if password2 != password
 			session[:fail_message] = "Passwords does not match"
 			session[:redirect_to] = "./register"

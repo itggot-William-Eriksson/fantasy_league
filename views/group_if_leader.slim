@@ -14,9 +14,9 @@ p Invite people!
 form action="/start/groups/invite/#{group_id}/#{user_id}" method="post"
     input type="text" name="username" placeholder="Username"
     input type="submit" value="Invite!"
-a href="/start"
-    button
-        p Back
 a href="/start/groups/delete/#{group_id}"
     button
         p Delete this group
+a href="/start"
+    button
+        p Back
