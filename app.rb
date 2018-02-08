@@ -8,7 +8,7 @@ class App < Sinatra::Base
 
 	get '/start' do
 		if session[:user] == nil
-			redirect('./')
+			redirect('/')
 		end
 		db = SQLite3::Database.new("allt.sqlite")
 		userid = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
@@ -25,7 +25,33 @@ class App < Sinatra::Base
 			result[y] = x.join
 			group_names << db.execute("SELECT name FROM groups WHERE id = ?", [x.join]).join
 		end
+		if session[:user] == "5"
+			redirect("/start/admin")
+		end
 		slim(:start, locals:{result:result, group_names:group_names, invites:invites, userid:userid})
+	end
+
+	get '/start/admin' do
+		if session[:user] != "5"
+			redirect('/start')
+		end
+		db = SQLite3::Database.new("allt.sqlite")
+		userid = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
+		result = db.execute("SELECT groupid FROM user_group WHERE userid = ?", [userid])
+		invites = db.execute("SELECT * FROM invites WHERE invited_user_id = ?", [userid])
+		invites.each_with_index do |x,y|
+			invites[y][3] = db.execute("SELECT username FROM users WHERE id = ?", [x[3]]).join
+			invites[y] << x[2]
+			group_name = db.execute("SELECT name FROM groups WHERE id = ?", [x[2]]).join
+			invites[y][2] = group_name
+		end
+		group_names = []
+		result.each_with_index do |x,y|
+			result[y] = x.join
+			group_names << db.execute("SELECT name FROM groups WHERE id = ?", [x.join]).join
+		end
+		player_list = db.execute("SELECT * FROM players")
+		slim(:startadmin, locals:{result:result, group_names:group_names, invites:invites, userid:userid, player_list:player_list})
 	end
 	
 	get '/start/groups/create' do
@@ -50,11 +76,37 @@ class App < Sinatra::Base
 			username = db.execute("SELECT username FROM users WHERE id = ?", [x.join]).join
 			username_list[x] = username
 		end
-		if leader_id == user_id
-			slim(:group_if_leader, locals:{group_name:group_name, leader_id:leader_id, user_id:user_id, user_list:user_list, username_list:username_list, group_id:group_id.to_s})
-		else
-			slim(:group, locals:{group_name:group_name, leader_id:leader_id, user_id:user_id, user_list:user_list, username_list:username_list, group_id:group_id.to_s})
+		player_list = db.execute("SELECT * FROM players")
+		selectedplayerslist = db.execute("SELECT * FROM player_group")
+		role_list = []
+		player_list.each_with_index do |x,y|
+			role_list << x[2]
+			selectedplayerslist.each do |z|
+				if x[0] == z[1] && user_id.to_s != z[2].to_s && z[0] == group_id # denna går igenom när spelaren är vald och det inte är den aktuella användaren
+					player_list[y] << db.execute("SELECT username FROM users WHERE id = ?", [z[2]]).join
+				elsif x[0] == z[1] && z[0] == group_id # denna går igenom när spelaren är vald och det är den aktuella användaren
+					player_list[y] << "d"
+				end
+			end
 		end
+		session[:role_list] = role_list.uniq
+		if leader_id == user_id
+			slim(:group_if_leader, locals:{role_list:role_list.uniq, player_list:player_list, group_name:group_name, leader_id:leader_id, user_id:user_id, user_list:user_list, username_list:username_list, group_id:group_id.to_s})
+		else
+			slim(:group, locals:{role_list:role_list.uniq, player_list:player_list, group_name:group_name, leader_id:leader_id, user_id:user_id, user_list:user_list, username_list:username_list, group_id:group_id.to_s})
+		end
+	end
+
+	get '/start/groups/view/:group_id/:user_id' do
+		user_id = params["user_id"]
+		group_id = params["group_id"]
+		db = SQLite3::Database.new("allt.sqlite")
+		player_id_list = db.execute("SELECT playerid FROM player_group WHERE userid = ? AND groupid = ?", [user_id, group_id])
+		player_list = []
+		player_id_list.each do |x|
+			player_list << db.execute("SELECT * FROM players WHERE id = ?", [x.join])[0]
+		end
+		slim(:view, locals:{player_list:player_list})
 	end
 
 	get '/start/groups/promote/:user_id/:group_id' do
@@ -91,6 +143,12 @@ class App < Sinatra::Base
 		user_id = params["user_id"]
 		group_id = params["group_id"]
 		db = SQLite3::Database.new("allt.sqlite")
+		logged_in_user_id = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
+		if user_id != logged_in_user_id
+			session[:fail_message] = "You are not allowed to do that"
+			session[:redirect_to] = "./start/groups/#{group_id}"
+			redirect('./fail')
+		end
 		db.execute("DELETE FROM user_group WHERE userid = ? AND groupid = ?", [user_id, group_id])
 		redirect('/start')
 	end
@@ -107,6 +165,7 @@ class App < Sinatra::Base
 		end
 		db.execute("DELETE FROM groups WHERE id = ?", [group_id])
 		db.execute("DELETE FROM user_group WHERE groupid = ?", [group_id])
+		db.execute("DELETE FROM player_group WHERE groupid = ?", [group_id])
 		db.execute("DELETE FROM invites WHERE group_id = ?", [group_id])
 		redirect('/start')
 	end
@@ -125,6 +184,54 @@ class App < Sinatra::Base
 			redirect('/')
 		end
 		slim(:fail, locals:{error_message:session[:fail_message], redirect_to:session[:redirect_to]})
+	end
+
+	get '/start/players/remove/:id' do
+		if session[:user] != "5"
+			redirect('/logout')
+		end
+		db = SQLite3::Database.new("allt.sqlite")
+		db.execute("DELETE FROM players WHERE id = ?", [params["id"]])
+		redirect("/start")
+	end
+
+	post '/start/players/create' do
+		if session[:user] != "5"
+			redirect('/logout')
+		end
+		name = params["name"]
+		role = params["role"]
+		path = params["path"]
+		db = SQLite3::Database.new("allt.sqlite")
+		begin
+			db.execute("INSERT INTO players (name,role,path) VALUES (?,?,?)",[name,role,path])
+		rescue
+			session[:fail_message] = "Something went wrong when adding a new player"
+			session[:redirect_to] = "/start"
+			redirect('./fail')
+		end
+		redirect('/start')
+	end
+
+	post '/start/groups/playerselect/:group_id/:user_id' do
+		group_id = params["group_id"]
+		user_id = params["user_id"]
+		db = SQLite3::Database.new("allt.sqlite")
+		logged_in_user_id = db.execute("SELECT id FROM users WHERE username = ?", [session[:user]]).join
+		if user_id != logged_in_user_id
+			session[:fail_message] = "You are not allowed to do that"
+			session[:redirect_to] = "./start/groups/#{group_id}"
+			redirect('./fail')
+		end
+		db.execute("DELETE FROM player_group WHERE userid = ? AND groupid = ?", [user_id, group_id])
+		role_list = session[:role_list]
+		role_list.each do |x|
+			begin
+				db.execute("INSERT INTO player_group (groupid,playerid,userid) VALUES (?,?,?)", [group_id, params["#{x}"],user_id])
+			rescue
+			end
+		end
+		redirect("/start/groups/"+group_id.to_s)
 	end
 
 	post "/start/groups/name_change/:group_id" do

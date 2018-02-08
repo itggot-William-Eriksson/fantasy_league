@@ -1,0 +1,35 @@
+a href="/start/groups/create"
+    button
+        p Create a new group
+- group_names.each_with_index do |x,y|
+    div class="standard"
+        a href="/start/groups/#{result[y]}"
+            p
+                = x
+a href="/logout"
+    p Log out
+- invites.each do |x|
+    - if x[4] == 0
+        div class="standard"
+            h4 You have an invite from #{x[3]} to join the group #{x[2]}
+            form action="/start/groups/accept/#{x[0]}" method="post"
+                input type="submit" value="Accpet"
+            form action="/start/groups/decline/#{x[0]}" method="post"
+                input type="submit" value="Decline"
+h1 admin commands
+form action="/start/players/create" method="post"
+    input type="text" name="name" placeholder="Player name"
+    input type="text" name="role" placeholder="Player role"
+    input type="text" name="path" placeholder="Image path"
+    input type="submit" value="Add"
+h2 players
+- player_list.each do |x|
+    div style="background-color: white; max-width: 100px;"
+        p 
+            = "namn: #{x[1]}"
+        p 
+            = "roll: #{x[2]}"
+        img src="#{x[3]}"
+        a href="/start/players/remove/#{x[0]}"
+            button
+                p Ta bort

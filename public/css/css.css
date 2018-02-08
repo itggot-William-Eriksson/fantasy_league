@@ -24,3 +24,30 @@ h1{
     font-weight: normal;
     margin: 0px;
 }
+
+div.radio{
+    display: flex;
+    flex-direction: row;
+}
+
+input.radio{
+    display: flex;
+    flex-direction: column;
+}
+
+label > input{ /* HIDE RADIO */
+    visibility: hidden; /* Makes input not-clickable */
+    position: absolute; /* Remove input from document flow */
+    background-color: white;
+}
+
+label > input + div{ /* IMAGE STYLES */
+    cursor:pointer;
+    border:2px solid transparent;
+    background-color: white;
+}
+
+label > input:checked + div{ /* (RADIO CHECKED) IMAGE STYLES */
+    border:2px solid black;
+    background-color: lightblue;
+}

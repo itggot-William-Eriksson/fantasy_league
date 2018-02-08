@@ -1,9 +1,44 @@
 h1 = group_name
 - user_list.each do |x|
-    p = username_list[x]
+    div style="display: flex; flex-direction: row"
+        p = username_list[x]
+        a href="/start/groups/view/#{group_id}/#{x.join}"
+            button
+                p View
 a href="/start/groups/leave/#{user_id}/#{group_id}"
     button
         p Leave this group
 a href="/start"
     button
         p Back
+h2 Select players
+form action="/start/groups/playerselect/#{group_id}/#{user_id}" method="post"
+    div class="radio"
+        - role_list.each do |y|
+            div
+                h3
+                    = "roll " + y.to_s
+                - player_list.each do |x|
+                    - if x[2] == y && x[4] == "d" #om det är rätt roll och det är din spelare
+                        label
+                            input class="radio" type="radio" name="#{y}" value="#{x[0]}" checked="checked"
+                            div style="margin: 10px;"
+                                h3 
+                                    = x[1]
+                                img src="#{x[3]}" alt="picture of #{x[1]}"
+                    - elsif x[2] == y && x[4] == nil  #om det är rätt roll och det är en ovald spelare
+                        label
+                            input class="radio" type="radio" name="#{y}" value="#{x[0]}"
+                            div style="margin: 10px;"
+                                h3 
+                                    = x[1]
+                                img src="#{x[3]}" alt="picture of #{x[1]}"
+                    - elsif x[2] == y #om det är rätt roll och den är vald av annan användare
+                        label
+                            div style="background-color:darkred; margin: 10px;"
+                                h3
+                                    = x[1]
+                                p
+                                    = "Selected by #{x[4]}"
+                                img src="#{x[3]}" alt="picture of #{x[1]}"
+    input type="submit" value="Add"
